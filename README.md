@@ -5,6 +5,8 @@ It utilizes WebDriver/Selenium for this task.
 
 ## How to run
 
+You will need to have the [Rust programming language](https://www.rust-lang.org/) installed (including Cargo).
+
 You will need to manually start ChromeDriver via `chromedriver --port=4444` in a different terminal window or tab.
 Then simply run `cargo run -- --config=<path-to-your-configuration-file>`. You can install chromedriver on macOS
 via `brew install chromedriver`.
