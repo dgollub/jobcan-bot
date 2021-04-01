@@ -18,7 +18,7 @@ You must have logged into Jobcan's website manually at least once before in orde
 
 ## Configuration
 
-The configuration is done in a TOML file. The default is `config.toml` and is expected to be in the same folder as the executable. See (config.toml.example)[config.toml.example] for the available configuration options.
+The configuration is done in a TOML file. The default is `config.toml` and is expected to be in the same folder as the executable. See [config.toml.example](config.toml.example) for the available configuration options.
 
 ## Copyright
 
