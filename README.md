@@ -1,4 +1,4 @@
-# Jobcan Bot for automatically filling out time tracking on the jobcan.ne.jp
+# Jobcan Bot for automatically filling out time tracking on jobcan.ne.jp
 
 This bot allows you to fill out your timesheet in [Jobcan](https://jobcan.ne.jp/) automatically.
 It utilizes WebDriver/Selenium for this task.
