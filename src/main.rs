@@ -8,16 +8,13 @@ use std::{thread, time};
 use thirtyfour::prelude::*;
 use thirtyfour::{common::command::Command, extensions::chrome::ChromeDevTools};
 
-
-
-const TABLE_WITH_PUNSHED_DATA: usize = 6;
+const TABLE_WITH_PUNCHED_DATA: usize = 6;
 const COLUMN_DATE: usize = 0;
 const COLUMN_HOLIDAY: usize = 1;
 const COLUMN_START_TIME: usize = 2;
 const COLUMN_END_TIME: usize = 3;
 const COLUMN_BREAK_TIME: usize = 4;
 const COLUMNS_COUNT: usize = 5;
-
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
@@ -98,7 +95,6 @@ struct ReviseClockingData {
     #[clap(short, long, default_value = "work")]
     message: String,
 }
-
 
 /// Click on the big orange "PUSH" button.
 #[derive(Clap, Debug)]
@@ -258,7 +254,7 @@ async fn main() -> color_eyre::Result<()> {
             if let Some(input_date_str) = &list.date {
                 let full_input_date = format!("{}01", input_date_str); // format is YYYYMM
                 let naive_date = NaiveDate::parse_from_str(&full_input_date, "%Y%m%d")?;
-                
+
                 driver
                     .cmd(Command::NavigateTo(format!(
                         "https://ssl.jobcan.jp/employee/attendance?list_type=normal&search_type=month&year={}&month={}",
@@ -269,8 +265,8 @@ async fn main() -> color_eyre::Result<()> {
             }
 
             let tables = driver.find_elements(By::Tag("table")).await?;
-            if tables.len() > TABLE_WITH_PUNSHED_DATA {
-                let table = &tables[TABLE_WITH_PUNSHED_DATA];
+            if tables.len() > TABLE_WITH_PUNCHED_DATA {
+                let table = &tables[TABLE_WITH_PUNCHED_DATA];
                 let body = table.find_element(By::Tag("tbody")).await?;
                 for tr in body.find_elements(By::Tag("tr")).await? {
                     let columns = tr.find_elements(By::Tag("td")).await?;
