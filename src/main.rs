@@ -8,6 +8,17 @@ use std::{thread, time};
 use thirtyfour::prelude::*;
 use thirtyfour::{common::command::Command, extensions::chrome::ChromeDevTools};
 
+
+
+const TABLE_WITH_PUNSHED_DATA: usize = 6;
+const COLUMN_DATE: usize = 0;
+const COLUMN_HOLIDAY: usize = 1;
+const COLUMN_START_TIME: usize = 2;
+const COLUMN_END_TIME: usize = 3;
+const COLUMN_BREAK_TIME: usize = 4;
+const COLUMNS_COUNT: usize = 5;
+
+
 #[allow(dead_code)]
 #[derive(Deserialize)]
 struct Configuration {
@@ -59,6 +70,10 @@ enum SubCommand {
     /// Login to jobcan. Only works if the 'visible' flag is also set and 'sleep' is > 0.
     #[clap(name = "login")]
     Login,
+
+    /// List logged hours for the current month or the given date
+    #[clap(name = "list")]
+    List(List),
 }
 
 /// Click on the big orange "PUSH" button.
@@ -82,6 +97,15 @@ struct ReviseClockingData {
     /// Additional memo/note for the "Push"/clock in text field. Defaults to "work"
     #[clap(short, long, default_value = "work")]
     message: String,
+}
+
+
+/// Click on the big orange "PUSH" button.
+#[derive(Clap, Debug)]
+struct List {
+    /// Optional date, format YYYYMM
+    #[clap(short, long)]
+    date: Option<String>,
 }
 
 #[tokio::main]
@@ -224,6 +248,49 @@ async fn main() -> color_eyre::Result<()> {
                     "https://ssl.jobcan.jp/employee/adit/modify/",
                 )))
                 .await?;
+        }
+        SubCommand::List(list) => {
+            driver
+                .cmd(Command::NavigateTo(String::from(
+                    "https://ssl.jobcan.jp/employee/attendance",
+                )))
+                .await?;
+            if let Some(input_date_str) = &list.date {
+                let full_input_date = format!("{}01", input_date_str); // format is YYYYMM
+                let naive_date = NaiveDate::parse_from_str(&full_input_date, "%Y%m%d")?;
+                
+                driver
+                    .cmd(Command::NavigateTo(format!(
+                        "https://ssl.jobcan.jp/employee/attendance?list_type=normal&search_type=month&year={}&month={}",
+                        &naive_date.year(),
+                        &naive_date.month()
+                    )))
+                    .await?;
+            }
+
+            let tables = driver.find_elements(By::Tag("table")).await?;
+            if tables.len() > TABLE_WITH_PUNSHED_DATA {
+                let table = &tables[TABLE_WITH_PUNSHED_DATA];
+                let body = table.find_element(By::Tag("tbody")).await?;
+                for tr in body.find_elements(By::Tag("tr")).await? {
+                    let columns = tr.find_elements(By::Tag("td")).await?;
+                    if columns.len() >= COLUMNS_COUNT {
+                        let column_date = &columns[COLUMN_DATE];
+                        let column_holiday = &columns[COLUMN_HOLIDAY];
+                        let column_start_time = &columns[COLUMN_START_TIME];
+                        let column_end_time = &columns[COLUMN_END_TIME];
+                        let column_break_time = &columns[COLUMN_BREAK_TIME];
+
+                        let date = column_date.text().await?;
+                        let _holiday = column_holiday.text().await?;
+                        let start_time = column_start_time.text().await?;
+                        let end_time = column_end_time.text().await?;
+                        let _break_time = column_break_time.text().await?;
+
+                        println!("{}: {} - {}", date, start_time, end_time);
+                    }
+                }
+            }
         }
     }
 
