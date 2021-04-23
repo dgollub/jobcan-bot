@@ -268,6 +268,9 @@ async fn main() -> color_eyre::Result<()> {
             if tables.len() > TABLE_WITH_PUNCHED_DATA {
                 let table = &tables[TABLE_WITH_PUNCHED_DATA];
                 let body = table.find_element(By::Tag("tbody")).await?;
+                let mut total_punched_minutes: u32 = 0;
+                let mut total_punched_minutes_without_breaks: u32 = 0;
+
                 for tr in body.find_elements(By::Tag("tr")).await? {
                     let columns = tr.find_elements(By::Tag("td")).await?;
                     if columns.len() >= COLUMNS_COUNT {
@@ -281,10 +284,40 @@ async fn main() -> color_eyre::Result<()> {
                         let _holiday = column_holiday.text().await?;
                         let start_time = column_start_time.text().await?;
                         let end_time = column_end_time.text().await?;
-                        let _break_time = column_break_time.text().await?;
+                        let break_time = column_break_time.text().await?;
 
-                        println!("{}: {} - {}", date, start_time, end_time);
+                        println!(
+                            "{}: {} - {} (break: {})",
+                            date, start_time, end_time, break_time
+                        );
+
+                        if !start_time.is_empty() {
+                            let start = calc_minutes(&start_time);
+                            let end = calc_minutes(&&end_time);
+                            let break_minutes = calc_minutes(&break_time);
+                            let total_for_day = end - start;
+                            let total_for_day_without_break = total_for_day - break_minutes;
+
+                            total_punched_minutes += total_for_day;
+                            total_punched_minutes_without_breaks += total_for_day_without_break;
+                        }
                     }
+                }
+
+                if total_punched_minutes > 0 {
+                    let hours_worked = total_punched_minutes / 60;
+                    let minutes_worked = total_punched_minutes % 60;
+                    let hw_wo_break = total_punched_minutes_without_breaks / 60;
+                    let mw_wo_break = total_punched_minutes_without_breaks % 60;
+                    let break_hours: i32 = hours_worked as i32 - hw_wo_break as i32;
+                    let break_minutes: i32 = minutes_worked as i32 - mw_wo_break as i32;
+                    println!(
+                        "\nTotal amount of time worked: {} minutes, or {:02}:{:02} hh:mm ({:02}:{:02})",
+                        total_punched_minutes, hours_worked, minutes_worked, break_hours, break_minutes,
+                    );
+                    println!("Total amount of time worked (ignoring breaks): {} minutes, or {:02}:{:02} hh:mm",
+                        total_punched_minutes_without_breaks, hw_wo_break, mw_wo_break,
+                    );
                 }
             }
         }
@@ -298,6 +331,27 @@ async fn main() -> color_eyre::Result<()> {
     }
 
     Ok(())
+}
+
+/// Turn timestamps like 06:45 into total minutes from 00:00 onwards.
+/// Example: 06:45 would be 6 * 60 + 45 = 360 + 45 = 405 minutes
+fn calc_minutes(time_string: &str) -> u32 {
+    if time_string.is_empty() {
+        return 0;
+    }
+    let (front, back) = time_string.split_at(3usize);
+    let hours = if let Ok(hours) = front[..2].parse::<u32>() {
+        hours
+    } else {
+        0
+    };
+    let minutes = if let Ok(minutes) = back.parse::<u32>() {
+        minutes
+    } else {
+        0
+    };
+
+    hours * 60 + minutes
 }
 
 #[cfg(test)]
