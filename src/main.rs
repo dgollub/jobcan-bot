@@ -269,7 +269,7 @@ async fn main() -> color_eyre::Result<()> {
                 let table = &tables[TABLE_WITH_PUNCHED_DATA];
                 let body = table.find_element(By::Tag("tbody")).await?;
                 let mut total_punched_minutes: u32 = 0;
-                let mut total_punched_minutes_without_breaks: u32 = 0;
+                let mut total_break_minutes: u32 = 0;
 
                 for tr in body.find_elements(By::Tag("tr")).await? {
                     let columns = tr.find_elements(By::Tag("td")).await?;
@@ -296,10 +296,9 @@ async fn main() -> color_eyre::Result<()> {
                             let end = calc_minutes(&&end_time);
                             let break_minutes = calc_minutes(&break_time);
                             let total_for_day = end - start;
-                            let total_for_day_without_break = total_for_day - break_minutes;
-
+                            
                             total_punched_minutes += total_for_day;
-                            total_punched_minutes_without_breaks += total_for_day_without_break;
+                            total_break_minutes += break_minutes;
                         }
                     }
                 }
@@ -307,16 +306,18 @@ async fn main() -> color_eyre::Result<()> {
                 if total_punched_minutes > 0 {
                     let hours_worked = total_punched_minutes / 60;
                     let minutes_worked = total_punched_minutes % 60;
-                    let hw_wo_break = total_punched_minutes_without_breaks / 60;
-                    let mw_wo_break = total_punched_minutes_without_breaks % 60;
-                    let break_hours: i32 = hours_worked as i32 - hw_wo_break as i32;
-                    let break_minutes: i32 = minutes_worked as i32 - mw_wo_break as i32;
+                    let hours_break = total_break_minutes / 60;
+                    let minutes_break = total_break_minutes % 60;
+                    let total_punched_minutes_without_breaks = total_punched_minutes - total_break_minutes;
+                    let hours_worked_no_breaks = total_punched_minutes_without_breaks / 60;
+                    let minutes_worked_no_breaks= total_punched_minutes_without_breaks % 60;
+                    
                     println!(
-                        "\nTotal amount of time worked: {} minutes, or {:02}:{:02} hh:mm ({:02}:{:02})",
-                        total_punched_minutes, hours_worked, minutes_worked, break_hours, break_minutes,
+                        "\nTotal amount of time worked: {} minutes, or {:02}:{:02} hh:mm (breaks: {:02}:{:02})",
+                        total_punched_minutes, hours_worked, minutes_worked, hours_break, minutes_break,
                     );
                     println!("Total amount of time worked (ignoring breaks): {} minutes, or {:02}:{:02} hh:mm",
-                        total_punched_minutes_without_breaks, hw_wo_break, mw_wo_break,
+                        total_punched_minutes_without_breaks, hours_worked_no_breaks, minutes_worked_no_breaks,
                     );
                 }
             }
