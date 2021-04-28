@@ -307,22 +307,22 @@ async fn main() -> color_eyre::Result<()> {
                         if !start_time.is_empty() {
                             let start = calc_minutes(&start_time);
                             let end = calc_minutes(&end_time);
-                            if start == 0 || end == 0 {
+                            if start.is_none() || end.is_none() {
                                 println!(" --- ignored, either start or end is 0");
                                 continue;
                             }
                             let break_minutes = calc_minutes(&break_time);
-                            let total_for_day = end - start;
+                            let total_for_day = end.unwrap() - start.unwrap();
 
                             total_punched_minutes += total_for_day;
-                            total_break_minutes += break_minutes;
+                            total_break_minutes += break_minutes.unwrap_or_default();
                         }
 
                         println!();
                     }
                 }
 
-                if tables.len() > INDEX_FOR_TABLE_WITH_CURRENT_TOTALS {
+                let jobcan_calculated_data = if tables.len() > INDEX_FOR_TABLE_WITH_CURRENT_TOTALS {
                     let table = &tables[INDEX_FOR_TABLE_WITH_CURRENT_TOTALS];
                     let body = table.find_element(By::Tag("tbody")).await?;
                     let rows = body.find_elements(By::Tag("tr")).await?;
@@ -341,10 +341,14 @@ async fn main() -> color_eyre::Result<()> {
                         println!("Worked  : {}", worked_so_far);
                         println!("Expected: {}", worked_expected);
                         println!("---------------------------");
-                    }
-                }
 
-                if total_punched_minutes > 0 {
+                        Some((worked_expected, worked_so_far))
+                    } else {
+                        None
+                    }
+                } else { None };
+
+                let (punched_hours, punched_minutes) = if total_punched_minutes > 0 {
                     let hours_worked = total_punched_minutes / 60;
                     let minutes_worked = total_punched_minutes % 60;
                     let hours_break = total_break_minutes / 60;
@@ -361,6 +365,17 @@ async fn main() -> color_eyre::Result<()> {
                     println!("Total amount of time worked (ignoring breaks): {} minutes, or {:02}:{:02} hh:mm",
                         total_punched_minutes_without_breaks, hours_worked_no_breaks, minutes_worked_no_breaks,
                     );
+
+                    (hours_worked_no_breaks, minutes_worked_no_breaks)
+                } else {
+                    (0, 0)
+                };
+
+                if let Some((expected, so_far)) = jobcan_calculated_data {
+                    println!("---------------------------");
+                    println!("required {} and {}", expected, so_far);
+                    println!("punched  {}:{} and {}:{}", punched_hours, punched_minutes, punched_hours, punched_minutes);
+                    println!("---------------------------");
                 }
             }
         }
@@ -376,29 +391,25 @@ async fn main() -> color_eyre::Result<()> {
     Ok(())
 }
 
+// TODO(dkg): Use Result<u32, Err> instead???
 /// Turn timestamps like 06:45 into total minutes from 00:00 onwards.
 /// Example: 06:45 would be 6 * 60 + 45 = 360 + 45 = 405 minutes
-fn calc_minutes(time_string: &str) -> u32 {
+fn calc_minutes(time_string: &str) -> Option<u32> {
     if time_string.is_empty() {
-        return 0;
+        return None;
     }
     if !time_string.contains(':') {
-        return 0;
+        return None;
+    }
+    if time_string.len() < 2 {
+        return None;
     }
     let index = 2;
     let (front, back) = time_string.split_at(index);
-    let hours = if let Ok(hours) = front[..index].parse::<u32>() {
-        hours
-    } else {
-        0
-    };
-    let minutes = if let Ok(minutes) = back.parse::<u32>() {
-        minutes
-    } else {
-        0
-    };
+    let hours = front[..index].parse::<u32>().ok()?;
+    let minutes = back[1..].parse::<u32>().ok()?;
 
-    hours * 60 + minutes
+    Some(hours * 60 + minutes)
 }
 
 #[cfg(test)]
@@ -413,6 +424,70 @@ mod tests {
             date_only.unwrap().format("%Y-%m-%d").to_string(),
             input_date_str
         );
+    }
+
+    #[test]
+    fn test_calc_minutes_works_1() {
+        let input = String::from("09:51");
+        let minutes = calc_minutes(&input).unwrap_or_default();
+
+        assert_eq!(9 * 60 + 51, minutes);
+    }
+
+    #[test]
+    fn test_calc_minutes_works_2() {
+        let input = String::from("23:59");
+        let minutes = calc_minutes(&input).unwrap_or_default();
+
+        assert_eq!(23 * 60 + 59, minutes);
+    }
+
+    #[test]
+    fn test_calc_minutes_works_3() {
+        let input = String::from("00:01");
+        let minutes = calc_minutes(&input).unwrap_or_default();
+
+        assert_eq!(1, minutes);
+    }
+
+    #[test]
+    fn test_calc_minutes_returns_0_on_failure_1() {
+        let input = String::from("勤務中");
+        let minutes = calc_minutes(&input);
+
+        assert_eq!(None, minutes);
+    }
+
+    #[test]
+    fn test_calc_minutes_returns_0_on_failure_2() {
+        let input = String::from("11:mm");
+        let minutes = calc_minutes(&input);
+
+        assert_eq!(None, minutes);
+    }
+
+    #[test]
+    fn test_calc_minutes_returns_0_on_failure_3() {
+        let input = String::from("mm:11");
+        let minutes = calc_minutes(&input);
+
+        assert_eq!(None, minutes);
+    }
+
+    #[test]
+    fn test_calc_minutes_returns_0_on_failure_4() {
+        let input = String::from(":");
+        let minutes = calc_minutes(&input);
+
+        assert_eq!(None, minutes);
+    }
+
+    #[test]
+    fn test_calc_minutes_returns_0_on_failure_5() {
+        let input = String::from("0:0");
+        let minutes = calc_minutes(&input);
+
+        assert_eq!(None, minutes);
     }
 
     // TODO(dkg): add more tests
