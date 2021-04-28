@@ -8,13 +8,19 @@ use std::{thread, time};
 use thirtyfour::prelude::*;
 use thirtyfour::{common::command::Command, extensions::chrome::ChromeDevTools};
 
-const TABLE_WITH_PUNCHED_DATA: usize = 6;
+const INDEX_FOR_TABLE_WITH_PUNCHED_DATA: usize = 6;
 const COLUMN_DATE: usize = 0;
 const COLUMN_HOLIDAY: usize = 1;
 const COLUMN_START_TIME: usize = 2;
 const COLUMN_END_TIME: usize = 3;
 const COLUMN_BREAK_TIME: usize = 4;
 const COLUMNS_COUNT: usize = 5;
+
+const INDEX_FOR_TABLE_WITH_CURRENT_TOTALS: usize = 3;
+const ROW_WITH_WORKED_HOURS_SO_FAR: usize = 0; // 1st row: 実労働時間
+const ROW_WITH_WORKED_TIME_EXPECTED: usize = 1; // 2nd row: 月規定労働時間
+
+
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
@@ -264,9 +270,16 @@ async fn main() -> color_eyre::Result<()> {
                     .await?;
             }
 
+            let title_element = driver.find_element(By::ClassName("card-title")).await;
+            if let Ok(title) = title_element {
+                println!("---------------------------");
+                println!("Data for {}", title.text().await?);
+                println!("---------------------------");
+            }
+
             let tables = driver.find_elements(By::Tag("table")).await?;
-            if tables.len() > TABLE_WITH_PUNCHED_DATA {
-                let table = &tables[TABLE_WITH_PUNCHED_DATA];
+            if tables.len() > INDEX_FOR_TABLE_WITH_PUNCHED_DATA {
+                let table = &tables[INDEX_FOR_TABLE_WITH_PUNCHED_DATA];
                 let body = table.find_element(By::Tag("tbody")).await?;
                 let mut total_punched_minutes: u32 = 0;
                 let mut total_break_minutes: u32 = 0;
@@ -306,6 +319,28 @@ async fn main() -> color_eyre::Result<()> {
                         }
 
                         println!();
+                    }
+                }
+
+                if tables.len() > INDEX_FOR_TABLE_WITH_CURRENT_TOTALS {
+                    let table = &tables[INDEX_FOR_TABLE_WITH_CURRENT_TOTALS];
+                    let body = table.find_element(By::Tag("tbody")).await?;
+                    let rows = body.find_elements(By::Tag("tr")).await?;
+
+                    if rows.len() > ROW_WITH_WORKED_TIME_EXPECTED {
+                        let row_worked_so_far = &rows[ROW_WITH_WORKED_HOURS_SO_FAR];
+                        let row_worked_expected = &rows[ROW_WITH_WORKED_TIME_EXPECTED];
+
+                        let col_worked_so_far = row_worked_so_far.find_element(By::Tag("td")).await?;
+                        let col_worked_expected = row_worked_expected.find_element(By::Tag("td")).await?;
+
+                        let worked_so_far = col_worked_so_far.text().await?;
+                        let worked_expected = col_worked_expected.text().await?;
+
+                        println!("---------------------------");
+                        println!("Worked  : {}", worked_so_far);
+                        println!("Expected: {}", worked_expected);
+                        println!("---------------------------");
                     }
                 }
 
