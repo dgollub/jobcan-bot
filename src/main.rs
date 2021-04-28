@@ -286,20 +286,26 @@ async fn main() -> color_eyre::Result<()> {
                         let end_time = column_end_time.text().await?;
                         let break_time = column_break_time.text().await?;
 
-                        println!(
+                        print!(
                             "{}: {} - {} (break: {})",
                             date, start_time, end_time, break_time
                         );
 
                         if !start_time.is_empty() {
                             let start = calc_minutes(&start_time);
-                            let end = calc_minutes(&&end_time);
+                            let end = calc_minutes(&end_time);
+                            if start == 0 || end == 0 {
+                                println!(" --- ignored, either start or end is 0");
+                                continue;
+                            }
                             let break_minutes = calc_minutes(&break_time);
                             let total_for_day = end - start;
-                            
+
                             total_punched_minutes += total_for_day;
                             total_break_minutes += break_minutes;
                         }
+
+                        println!();
                     }
                 }
 
@@ -308,10 +314,11 @@ async fn main() -> color_eyre::Result<()> {
                     let minutes_worked = total_punched_minutes % 60;
                     let hours_break = total_break_minutes / 60;
                     let minutes_break = total_break_minutes % 60;
-                    let total_punched_minutes_without_breaks = total_punched_minutes - total_break_minutes;
+                    let total_punched_minutes_without_breaks =
+                        total_punched_minutes - total_break_minutes;
                     let hours_worked_no_breaks = total_punched_minutes_without_breaks / 60;
-                    let minutes_worked_no_breaks= total_punched_minutes_without_breaks % 60;
-                    
+                    let minutes_worked_no_breaks = total_punched_minutes_without_breaks % 60;
+
                     println!(
                         "\nTotal amount of time worked: {} minutes, or {:02}:{:02} hh:mm (breaks: {:02}:{:02})",
                         total_punched_minutes, hours_worked, minutes_worked, hours_break, minutes_break,
@@ -340,8 +347,12 @@ fn calc_minutes(time_string: &str) -> u32 {
     if time_string.is_empty() {
         return 0;
     }
-    let (front, back) = time_string.split_at(3usize);
-    let hours = if let Ok(hours) = front[..2].parse::<u32>() {
+    if !time_string.contains(':') {
+        return 0;
+    }
+    let index = 2;
+    let (front, back) = time_string.split_at(index);
+    let hours = if let Ok(hours) = front[..index].parse::<u32>() {
         hours
     } else {
         0
