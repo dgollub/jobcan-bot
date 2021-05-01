@@ -54,6 +54,9 @@ struct Opts {
     /// Whether the browser window should be visible during execution. Default: not set, ie. hide the browser window.
     #[clap(short, long)]
     visible: bool,
+    /// Whether debug output should be printed. Default: false
+    #[clap(short, long)]
+    debug: bool,
     /// How long the program should sleep in seconds after it is done in order to keep the browser open and running.
     /// Useful for debugging together with the "visible" flag. Default: 0, meaning to not sleep and quit immediately when done.
     #[clap(short, long, name = "sleep")]
@@ -108,6 +111,9 @@ struct List {
     /// Optional date, format YYYYMM
     #[clap(short, long)]
     date: Option<String>,
+    /// Output as CSV data. Default: false
+    #[clap(short, long)]
+    csv: bool,
 }
 
 #[tokio::main]
@@ -146,7 +152,10 @@ async fn main() -> color_eyre::Result<()> {
     let config_str = fs::read_to_string(&opts.config)?;
     let config: Configuration = toml::from_str(&config_str)?;
 
-    println!("Starting WebDriver ...");
+    // TODO(dkg): Maybe it is time for a custom "Writer" struct of sorts....
+    if opts.debug {
+        println!("Starting WebDriver ...");
+    }
 
     let mut caps = DesiredCapabilities::chrome();
     if !opts.visible {
@@ -159,7 +168,10 @@ async fn main() -> color_eyre::Result<()> {
 
     let dev_tools = ChromeDevTools::new(driver.session());
     let version_info = dev_tools.execute_cdp("Browser.getVersion").await?;
-    println!("Using Chrome Version: {:?}", version_info);
+
+    if opts.debug {
+        println!("Using Chrome Version: {:?}", version_info);
+    }
 
     // Login via https://id.jobcan.jp/users/sign_in
     driver.get("https://id.jobcan.jp/users/sign_in").await?;
@@ -270,11 +282,13 @@ async fn main() -> color_eyre::Result<()> {
                     .await?;
             }
 
-            let title_element = driver.find_element(By::ClassName("card-title")).await;
-            if let Ok(title) = title_element {
-                println!("---------------------------");
-                println!("Data for {}", title.text().await?);
-                println!("---------------------------");
+            if !list.csv {
+                let title_element = driver.find_element(By::ClassName("card-title")).await;
+                if let Ok(title) = title_element {
+                    println!("---------------------------");
+                    println!("Data for {}", title.text().await?);
+                    println!("---------------------------");
+                }
             }
 
             let tables = driver.find_elements(By::Tag("table")).await?;
@@ -299,26 +313,44 @@ async fn main() -> color_eyre::Result<()> {
                         let end_time = column_end_time.text().await?;
                         let break_time = column_break_time.text().await?;
 
-                        print!(
-                            "{}: {} - {} (break: {})",
-                            date, start_time, end_time, break_time
-                        );
+                        if !list.csv {
+                            print!(
+                                "{}: {} - {} (break: {})",
+                                date, start_time, end_time, break_time
+                            );
+                        }
 
                         if !start_time.is_empty() {
                             let start = calc_minutes(&start_time);
                             let end = calc_minutes(&end_time);
                             if start.is_none() || end.is_none() {
-                                println!(" --- ignored, either start or end is 0");
+                                if !list.csv {
+                                    println!(" --- ignored, either start or end is 0");
+                                }
                                 continue;
                             }
-                            let break_minutes = calc_minutes(&break_time);
+                            let break_minutes = calc_minutes(&break_time).unwrap_or_default();
                             let total_for_day = end.unwrap() - start.unwrap();
-
+                            
                             total_punched_minutes += total_for_day;
-                            total_break_minutes += break_minutes.unwrap_or_default();
+                            total_break_minutes += break_minutes;
+
+                            if list.csv {
+                                // NOTE(dkg): With default language being Japanese, the output means the following
+                                // mm/dd, hh:mm (start); hh:mm (end), hh:mm (break duration), minutes (total work time without breaks)
+                                let total_for_day_without_breaks = total_for_day - break_minutes;
+                                let hours = total_for_day_without_breaks / 60;
+                                let minutes = total_for_day_without_breaks % 60;
+                                println!(
+                                    "{};{};{};{};{:02}:{:02}",
+                                    date, start_time, end_time, break_time, hours, minutes
+                                );
+                            }
                         }
 
-                        println!();
+                        if !list.csv {
+                            println!();
+                        }
                     }
                 }
 
@@ -337,10 +369,12 @@ async fn main() -> color_eyre::Result<()> {
                         let worked_so_far = col_worked_so_far.text().await?;
                         let worked_expected = col_worked_expected.text().await?;
 
-                        println!("---------------------------");
-                        println!("Worked  : {}", worked_so_far);
-                        println!("Expected: {}", worked_expected);
-                        println!("---------------------------");
+                        if !list.csv {
+                            println!("---------------------------");
+                            println!("Worked  : {}", worked_so_far);
+                            println!("Expected: {}", worked_expected);
+                            println!("---------------------------");
+                        }
 
                         Some((worked_expected, worked_so_far))
                     } else {
@@ -358,13 +392,15 @@ async fn main() -> color_eyre::Result<()> {
                     let hours_worked_no_breaks = total_punched_minutes_without_breaks / 60;
                     let minutes_worked_no_breaks = total_punched_minutes_without_breaks % 60;
 
-                    println!(
-                        "\nTotal amount of time worked: {} minutes, or {:02}:{:02} hh:mm (breaks: {:02}:{:02})",
-                        total_punched_minutes, hours_worked, minutes_worked, hours_break, minutes_break,
-                    );
-                    println!("Total amount of time worked (ignoring breaks): {} minutes, or {:02}:{:02} hh:mm",
-                        total_punched_minutes_without_breaks, hours_worked_no_breaks, minutes_worked_no_breaks,
-                    );
+                    if !list.csv {
+                        println!(
+                            "\nTotal amount of time worked: {} minutes, or {:02}:{:02} hh:mm (breaks: {:02}:{:02})",
+                            total_punched_minutes, hours_worked, minutes_worked, hours_break, minutes_break,
+                        );
+                        println!("Total amount of time worked (ignoring breaks): {} minutes, or {:02}:{:02} hh:mm",
+                            total_punched_minutes_without_breaks, hours_worked_no_breaks, minutes_worked_no_breaks,
+                        );
+                    }
 
                     (hours_worked_no_breaks, minutes_worked_no_breaks)
                 } else {
@@ -372,10 +408,12 @@ async fn main() -> color_eyre::Result<()> {
                 };
 
                 if let Some((expected, so_far)) = jobcan_calculated_data {
-                    println!("---------------------------");
-                    println!("required {} and {}", expected, so_far);
-                    println!("punched  {}:{} and {}:{}", punched_hours, punched_minutes, punched_hours, punched_minutes);
-                    println!("---------------------------");
+                    if !list.csv {
+                        println!("---------------------------");
+                        println!("required {} and {}", expected, so_far);
+                        println!("punched  {}:{} and {}:{}", punched_hours, punched_minutes, punched_hours, punched_minutes);
+                        println!("---------------------------");
+                    }
                 }
             }
         }
@@ -383,7 +421,11 @@ async fn main() -> color_eyre::Result<()> {
 
     if let Some(sleep_time) = opts.sleep_time {
         if sleep_time > 0 {
-            println!("Sleeping for {} seconds...", sleep_time);
+            // TODO(dkg): Figure out how to handle the subcommand with --csv here, because we do not want this "println" in case
+            //            of a CSV file...
+            if opts.debug {
+                println!("Sleeping for {} seconds...", sleep_time); 
+            }
             thread::sleep(time::Duration::from_secs(sleep_time));
         }
     }
