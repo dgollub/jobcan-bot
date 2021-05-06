@@ -370,10 +370,10 @@ async fn main() -> color_eyre::Result<()> {
                         let worked_expected = col_worked_expected.text().await?;
 
                         if !list.csv {
-                            println!("---------------------------");
+                            println!("------------ Jobcan says ---------------");
                             println!("Worked  : {}", worked_so_far);
                             println!("Expected: {}", worked_expected);
-                            println!("---------------------------");
+                            println!("----------------------------------------");
                         }
 
                         Some((worked_expected, worked_so_far))
