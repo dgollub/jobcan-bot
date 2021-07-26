@@ -20,8 +20,6 @@ const INDEX_FOR_TABLE_WITH_CURRENT_TOTALS: usize = 3;
 const ROW_WITH_WORKED_HOURS_SO_FAR: usize = 0; // 1st row: 実労働時間
 const ROW_WITH_WORKED_TIME_EXPECTED: usize = 1; // 2nd row: 月規定労働時間
 
-
-
 #[allow(dead_code)]
 #[derive(Deserialize)]
 struct Configuration {
@@ -190,7 +188,7 @@ async fn main() -> color_eyre::Result<()> {
     let elem_button = elem_form.find_element(By::ClassName("form__login")).await?;
     elem_button.click().await?;
 
-    thread::sleep(time::Duration::from_millis(1000));
+    thread::sleep(time::Duration::from_millis(1500));
 
     // NOTE(dkg): Directly opening the edit URL or navigating there won't work and we will be prompted to login again.
     driver
@@ -198,6 +196,12 @@ async fn main() -> color_eyre::Result<()> {
             "https://ssl.jobcan.jp/jbcoauth/login",
         )))
         .await?;
+
+    if opts.debug {
+        println!("Waiting to avoid rate limit trigger ...");
+    }
+
+    thread::sleep(time::Duration::from_millis(3000));
 
     match &opts.subcmd {
         SubCommand::PushIt(push_it) => {
@@ -269,6 +273,19 @@ async fn main() -> color_eyre::Result<()> {
                     "https://ssl.jobcan.jp/employee/attendance",
                 )))
                 .await?;
+
+            thread::sleep(time::Duration::from_millis(500));
+
+            if opts.debug {
+                println!("Checking if we were redirected to the partial error page ...");
+            }
+
+            let right_url = driver.current_url().await?;
+            if right_url.contains("error/partial-rate-limit") {
+                driver.back().await?;
+                thread::sleep(time::Duration::from_millis(500));
+            }
+
             if let Some(input_date_str) = &list.date {
                 let full_input_date = format!("{}01", input_date_str); // format is YYYYMM
                 let naive_date = NaiveDate::parse_from_str(&full_input_date, "%Y%m%d")?;
@@ -331,7 +348,7 @@ async fn main() -> color_eyre::Result<()> {
                             }
                             let break_minutes = calc_minutes(&break_time).unwrap_or_default();
                             let total_for_day = end.unwrap() - start.unwrap();
-                            
+
                             total_punched_minutes += total_for_day;
                             total_break_minutes += break_minutes;
 
@@ -363,8 +380,10 @@ async fn main() -> color_eyre::Result<()> {
                         let row_worked_so_far = &rows[ROW_WITH_WORKED_HOURS_SO_FAR];
                         let row_worked_expected = &rows[ROW_WITH_WORKED_TIME_EXPECTED];
 
-                        let col_worked_so_far = row_worked_so_far.find_element(By::Tag("td")).await?;
-                        let col_worked_expected = row_worked_expected.find_element(By::Tag("td")).await?;
+                        let col_worked_so_far =
+                            row_worked_so_far.find_element(By::Tag("td")).await?;
+                        let col_worked_expected =
+                            row_worked_expected.find_element(By::Tag("td")).await?;
 
                         let worked_so_far = col_worked_so_far.text().await?;
                         let worked_expected = col_worked_expected.text().await?;
@@ -380,7 +399,9 @@ async fn main() -> color_eyre::Result<()> {
                     } else {
                         None
                     }
-                } else { None };
+                } else {
+                    None
+                };
 
                 let (punched_hours, punched_minutes) = if total_punched_minutes > 0 {
                     let hours_worked = total_punched_minutes / 60;
@@ -411,7 +432,10 @@ async fn main() -> color_eyre::Result<()> {
                     if !list.csv {
                         println!("---------------------------");
                         println!("required {} and {}", expected, so_far);
-                        println!("punched  {}:{} and {}:{}", punched_hours, punched_minutes, punched_hours, punched_minutes);
+                        println!(
+                            "punched  {}:{} and {}:{}",
+                            punched_hours, punched_minutes, punched_hours, punched_minutes
+                        );
                         println!("---------------------------");
                     }
                 }
@@ -424,7 +448,7 @@ async fn main() -> color_eyre::Result<()> {
             // TODO(dkg): Figure out how to handle the subcommand with --csv here, because we do not want this "println" in case
             //            of a CSV file...
             if opts.debug {
-                println!("Sleeping for {} seconds...", sleep_time); 
+                println!("Sleeping for {} seconds...", sleep_time);
             }
             thread::sleep(time::Duration::from_secs(sleep_time));
         }
