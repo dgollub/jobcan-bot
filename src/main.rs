@@ -1,12 +1,16 @@
 use chrono::prelude::*;
 use clap::Clap;
 use color_eyre::eyre::{bail, WrapErr};
-use serde::Deserialize;
-use std::fs;
-use std::path::Path;
-use std::{thread, time};
+use log::{debug, error, info, trace};
+use std::{env, thread, time};
 use thirtyfour::prelude::*;
 use thirtyfour::{common::command::Command, extensions::chrome::ChromeDevTools};
+
+mod config;
+use crate::config::{Configuration, ENVVAR_NAME_LOGIN, ENVVAR_NAME_PASSWORD};
+
+mod slack;
+use crate::slack::post_to_slack;
 
 const INDEX_FOR_TABLE_WITH_PUNCHED_DATA: usize = 6;
 const COLUMN_DATE: usize = 0;
@@ -20,45 +24,22 @@ const INDEX_FOR_TABLE_WITH_CURRENT_TOTALS: usize = 3;
 const ROW_WITH_WORKED_HOURS_SO_FAR: usize = 0; // 1st row: 実労働時間
 const ROW_WITH_WORKED_TIME_EXPECTED: usize = 1; // 2nd row: 月規定労働時間
 
-#[allow(dead_code)]
-#[derive(Deserialize)]
-struct Configuration {
-    #[serde(alias = "JC_LOGIN")]
-    login: String,
-    #[serde(alias = "JC_PASSWORD")]
-    password: String,
-}
-
-impl std::fmt::Debug for Configuration {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Configuration")
-            .field("login", &self.login)
-            .field("password", &String::from("******"))
-            .finish()
-    }
-}
-
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
 #[derive(Clap, Debug)]
 #[clap(
-    version = "1.0.0",
+    version = "1.1.0",
     author = "Daniel Kurashige-Gollub <daniel@kurashige-gollub.de>"
 )]
 struct Opts {
-    /// Sets a custom config file. Defaults to config.toml.
-    #[clap(short, long, default_value = "config.toml")]
-    config: String,
     /// Whether the browser window should be visible during execution. Default: not set, ie. hide the browser window.
     #[clap(short, long)]
     visible: bool,
-    /// Whether debug output should be printed. Default: false
-    #[clap(short, long)]
-    debug: bool,
     /// How long the program should sleep in seconds after it is done in order to keep the browser open and running.
     /// Useful for debugging together with the "visible" flag. Default: 0, meaning to not sleep and quit immediately when done.
     #[clap(short, long, name = "sleep")]
     sleep_time: Option<u64>,
+
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
@@ -83,9 +64,18 @@ enum SubCommand {
 /// Click on the big orange "PUSH" button.
 #[derive(Clap, Debug)]
 struct PushIt {
-    /// Optional memo/note for the "Push"/clock in text field. Defaults to "work"
-    #[clap(short, long, default_value = "work")]
+    /// Optional memo/note for the "Push"/clock in text field. Defaults to "work start"
+    #[clap(short, long, default_value = "work start")]
     message: String,
+
+    /// Message for Slack. Only used when SLACK_USER_TOKEN and slack_channel are set.
+    /// If not set no message is posted.
+    #[clap(long, default_value = "", name = "slack-message")]
+    slack_message: String,
+
+    /// The Slack channel to post to. Only used when SLACK_USER_TOKEN is set. Default: #standup
+    #[clap(long, default_value = "#standup", name = "slack-channel")]
+    slack_channel: String,
 }
 
 /// Add a manual time entry via the "revise clocking data" feature. Only adds new entries.
@@ -98,8 +88,8 @@ struct ReviseClockingData {
     /// The time that should be revised. Defaults to 0700, which means 7am. Important: format is "hhmm".
     #[clap(short, long, default_value = "0700")]
     time: String,
-    /// Additional memo/note for the "Push"/clock in text field. Defaults to "work"
-    #[clap(short, long, default_value = "work")]
+    /// Additional memo/note for the "Push"/clock in text field. Defaults to "work start"
+    #[clap(short, long, default_value = "work start")]
     message: String,
 }
 
@@ -116,19 +106,31 @@ struct List {
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
+    let log_level = env::var("RUST_LOG").unwrap_or_default();
+    if log_level.is_empty() {
+        eprintln!("WARNING! RUST_LOG environment variable is not set. Setting it to 'info'.");
+        env::set_var("RUST_LOG", "info");
+    }
     color_eyre::install()?;
+    dotenv::dotenv().ok();
+    env_logger::init();
+
+    let config = Configuration::from_env();
+    if !config.is_ok() {
+        bail!(
+            "You must set both {} and {} environment variables.",
+            ENVVAR_NAME_LOGIN,
+            ENVVAR_NAME_PASSWORD
+        );
+    }
 
     let opts: Opts = Opts::parse();
-
-    if !Path::new(&opts.config).exists() {
-        bail!("Configuration file could not be found at: {}", opts.config);
-    }
 
     // Sanity check before we start up the browser.
     match &opts.subcmd {
         SubCommand::ReviseClockingData(revise_data) => {
             if let Some(input_date_str) = &revise_data.date {
-                NaiveDate::parse_from_str(&input_date_str, "%Y-%m-%d")
+                NaiveDate::parse_from_str(input_date_str, "%Y-%m-%d")
                     .wrap_err("Unable to parse the date.")?;
             }
             if revise_data.time.len() != 4 {
@@ -147,13 +149,7 @@ async fn main() -> color_eyre::Result<()> {
         _ => (),
     }
 
-    let config_str = fs::read_to_string(&opts.config)?;
-    let config: Configuration = toml::from_str(&config_str)?;
-
-    // TODO(dkg): Maybe it is time for a custom "Writer" struct of sorts....
-    if opts.debug {
-        println!("Starting WebDriver ...");
-    }
+    debug!("Starting WebDriver ...");
 
     let mut caps = DesiredCapabilities::chrome();
     if !opts.visible {
@@ -167,9 +163,7 @@ async fn main() -> color_eyre::Result<()> {
     let dev_tools = ChromeDevTools::new(driver.session());
     let version_info = dev_tools.execute_cdp("Browser.getVersion").await?;
 
-    if opts.debug {
-        println!("Using Chrome Version: {:?}", version_info);
-    }
+    debug!("Using Chrome Version: {:?}", version_info);
 
     // Login via https://id.jobcan.jp/users/sign_in
     driver.get("https://id.jobcan.jp/users/sign_in").await?;
@@ -197,9 +191,7 @@ async fn main() -> color_eyre::Result<()> {
         )))
         .await?;
 
-    if opts.debug {
-        println!("Waiting to avoid rate limit trigger ...");
-    }
+    debug!("Waiting to avoid rate limit trigger ...");
 
     thread::sleep(time::Duration::from_millis(3000));
 
@@ -216,6 +208,22 @@ async fn main() -> color_eyre::Result<()> {
 
             let elem_push_button = driver.find_element(By::Id("adit-button-push")).await?;
             elem_push_button.click().await?;
+
+            if config.can_post_to_slack() {
+                debug!("Waiting before trying to post to Slack ...");
+                thread::sleep(time::Duration::from_secs(30));
+
+                let message = if push_it.slack_message.is_empty() {
+                    &push_it.message
+                } else {
+                    &push_it.slack_message
+                };
+
+                let result = post_to_slack(&config, &push_it.slack_channel, message).await;
+                if result.is_err() {
+                    bail!("Slack returned an error.\n{}", result.unwrap_err());
+                }
+            }
         }
         SubCommand::ReviseClockingData(revise_data) => {
             driver
@@ -225,7 +233,7 @@ async fn main() -> color_eyre::Result<()> {
                 .await?;
 
             if let Some(input_date_str) = &revise_data.date {
-                let naive_date = NaiveDate::parse_from_str(&input_date_str, "%Y-%m-%d")?;
+                let naive_date = NaiveDate::parse_from_str(input_date_str, "%Y-%m-%d")?;
                 driver
                     .cmd(Command::NavigateTo(format!(
                         "https://ssl.jobcan.jp/employee/adit/modify?year={}&month={}&day={}",
@@ -252,11 +260,12 @@ async fn main() -> color_eyre::Result<()> {
             if let Ok(elem) = elem_time_error {
                 let elem_error = elem.find_element(By::ClassName("alert")).await;
                 if elem_error.is_ok() {
-                    eprintln!("The format for the 'time' argument is wrong. Please check. It should be hhmm.");
+                    error!("The format for the 'time' argument is wrong. Please check. It should be 'hhmm'.");
                     if opts.visible && opts.sleep_time.is_none() {
-                        eprintln!("Sleeping for 30 seconds. Please check the error display on the website.");
-                        thread::sleep(time::Duration::from_secs(30));
+                        error!("Sleeping for 90 seconds. Please check the error display on the website.");
+                        thread::sleep(time::Duration::from_secs(90));
                     }
+                    bail!("The 'time' argument has the wrong format. It should be 'hhmm'.");
                 }
             }
         }
@@ -276,9 +285,7 @@ async fn main() -> color_eyre::Result<()> {
 
             thread::sleep(time::Duration::from_millis(500));
 
-            if opts.debug {
-                println!("Checking if we were redirected to the partial error page ...");
-            }
+            debug!("Checking if we were redirected to the partial error page ...");
 
             let right_url = driver.current_url().await?;
             if right_url.contains("error/partial-rate-limit") {
@@ -302,9 +309,9 @@ async fn main() -> color_eyre::Result<()> {
             if !list.csv {
                 let title_element = driver.find_element(By::ClassName("card-title")).await;
                 if let Ok(title) = title_element {
-                    println!("---------------------------");
-                    println!("Data for {}", title.text().await?);
-                    println!("---------------------------");
+                    info!("---------------------------");
+                    info!("Data for {}", title.text().await?);
+                    info!("---------------------------");
                 }
             }
 
@@ -331,7 +338,7 @@ async fn main() -> color_eyre::Result<()> {
                         let break_time = column_break_time.text().await?;
 
                         if !list.csv {
-                            print!(
+                            info!(
                                 "{}: {} - {} (break: {})",
                                 date, start_time, end_time, break_time
                             );
@@ -342,7 +349,7 @@ async fn main() -> color_eyre::Result<()> {
                             let end = calc_minutes(&end_time);
                             if start.is_none() || end.is_none() {
                                 if !list.csv {
-                                    println!(" --- ignored, either start or end is 0");
+                                    debug!("<--- previous ignored, either start or end is 0");
                                 }
                                 continue;
                             }
@@ -363,10 +370,6 @@ async fn main() -> color_eyre::Result<()> {
                                     date, start_time, end_time, break_time, hours, minutes
                                 );
                             }
-                        }
-
-                        if !list.csv {
-                            println!();
                         }
                     }
                 }
@@ -389,10 +392,10 @@ async fn main() -> color_eyre::Result<()> {
                         let worked_expected = col_worked_expected.text().await?;
 
                         if !list.csv {
-                            println!("------------ Jobcan says ---------------");
-                            println!("Worked  : {}", worked_so_far);
-                            println!("Expected: {}", worked_expected);
-                            println!("----------------------------------------");
+                            info!("------------ Jobcan says ---------------");
+                            info!("Worked  : {}", worked_so_far);
+                            info!("Expected: {}", worked_expected);
+                            info!("----------------------------------------");
                         }
 
                         Some((worked_expected, worked_so_far))
@@ -414,11 +417,11 @@ async fn main() -> color_eyre::Result<()> {
                     let minutes_worked_no_breaks = total_punched_minutes_without_breaks % 60;
 
                     if !list.csv {
-                        println!(
+                        info!(
                             "\nTotal amount of time worked: {} minutes, or {:02}:{:02} hh:mm (breaks: {:02}:{:02})",
                             total_punched_minutes, hours_worked, minutes_worked, hours_break, minutes_break,
                         );
-                        println!("Total amount of time worked (ignoring breaks): {} minutes, or {:02}:{:02} hh:mm",
+                        info!("Total amount of time worked (ignoring breaks): {} minutes, or {:02}:{:02} hh:mm",
                             total_punched_minutes_without_breaks, hours_worked_no_breaks, minutes_worked_no_breaks,
                         );
                     }
@@ -430,13 +433,13 @@ async fn main() -> color_eyre::Result<()> {
 
                 if let Some((expected, so_far)) = jobcan_calculated_data {
                     if !list.csv {
-                        println!("---------------------------");
-                        println!("required {} and {}", expected, so_far);
-                        println!(
+                        info!("---------------------------");
+                        info!("required {} and {}", expected, so_far);
+                        info!(
                             "punched  {}:{} and {}:{}",
                             punched_hours, punched_minutes, punched_hours, punched_minutes
                         );
-                        println!("---------------------------");
+                        info!("---------------------------");
                     }
                 }
             }
@@ -445,11 +448,7 @@ async fn main() -> color_eyre::Result<()> {
 
     if let Some(sleep_time) = opts.sleep_time {
         if sleep_time > 0 {
-            // TODO(dkg): Figure out how to handle the subcommand with --csv here, because we do not want this "println" in case
-            //            of a CSV file...
-            if opts.debug {
-                println!("Sleeping for {} seconds...", sleep_time);
-            }
+            trace!("Sleeping for {} seconds...", sleep_time);
             thread::sleep(time::Duration::from_secs(sleep_time));
         }
     }
@@ -457,7 +456,6 @@ async fn main() -> color_eyre::Result<()> {
     Ok(())
 }
 
-// TODO(dkg): Use Result<u32, Err> instead???
 /// Turn timestamps like 06:45 into total minutes from 00:00 onwards.
 /// Example: 06:45 would be 6 * 60 + 45 = 360 + 45 = 405 minutes
 fn calc_minutes(time_string: &str) -> Option<u32> {

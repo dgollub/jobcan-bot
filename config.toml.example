@@ -1,7 +1,0 @@
-# This is an example configuration file.
-# It uses the TOML format.
-
-# Define your Jobcan (from here on out JC) login. This is usually your email address.
-JC_LOGIN = "<email>"
-# Your JC password. You must have already set this before, ie you manually logged into JC's website once before.
-JC_PASSWORD = "<password>"

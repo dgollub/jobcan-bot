@@ -20,7 +20,16 @@ You must have logged into Jobcan's website manually at least once before in orde
 
 ## Configuration
 
-The configuration is done in a TOML file. The default is `config.toml` and is expected to be in the same folder as the executable. See [config.toml.example](config.toml.example) for the available configuration options.
+The configuration is done in a `.env` file. It is expected to be in the same folder as the executable.
+See [.env.example](.env.example) for the available configuration options.
+
+### Slack integration
+
+You can also configure this bot to automatically post a message to a specific Slack channel after punshing into Jobcan.
+You will need to set the `SLACK_USER_TOKEN` environment variable (or set it in your `.env` file). Then you can specify the
+channel and message via the `--slack-channel` (default: `#standup`) and `--slack-message` command line arguments.
+
+By default `--slack-message` will use the same message you specified for Jobcan.
 
 ## Copyright
 
