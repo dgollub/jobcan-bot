@@ -70,6 +70,7 @@ pub async fn post_to_slack(
     );
     if let Some(profile) = slack_user.profile {
         post_chat_req.username(profile.display_name.unwrap_or_else(|| username.into()));
+        // NOTE(dkg): This is only needed when a bot token is used. A user token should handle this on its own.
         if let Some(icon) = profile.icon {
             if let Some(images) = icon.images {
                 // TODO(dkg): not sure if this is the right one to use...

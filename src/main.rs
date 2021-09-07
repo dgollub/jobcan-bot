@@ -128,6 +128,11 @@ async fn main() -> color_eyre::Result<()> {
 
     // Sanity check before we start up the browser.
     match &opts.subcmd {
+        // Left in for testing.
+        // SubCommand::PushIt(push_it) => {
+        //     let _ = post_to_slack(&config, &push_it.slack_channel, &push_it.slack_message).await;
+        //     return Ok(());
+        // }
         SubCommand::ReviseClockingData(revise_data) => {
             if let Some(input_date_str) = &revise_data.date {
                 NaiveDate::parse_from_str(input_date_str, "%Y-%m-%d")
