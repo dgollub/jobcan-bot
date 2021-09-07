@@ -44,7 +44,7 @@ pub async fn post_to_slack(
 
     let user_list_req = SlackApiUsersListRequest::new();
     let user_list_res = session.users_list(&user_list_req).await?;
-    // eprintln!("{:#?}", user_list_res.members);
+
     let search_for_user = Some(username.into());
     let slack_user = user_list_res
         .members
@@ -61,36 +61,40 @@ pub async fn post_to_slack(
 
     let user_info_resp = session.users_info(&user_info_req).await?;
     let slack_user = user_info_resp.user;
-    eprintln!("{:#?}", slack_user);
 
     // Send a simple text message
     let mut post_chat_req = SlackApiChatPostMessageRequest::new(
         channel.into(),
         SlackMessageContent::new().with_text(message.into()),
     );
-    if let Some(profile) = slack_user.profile {
-        post_chat_req.username(profile.display_name.unwrap_or_else(|| username.into()));
-        // NOTE(dkg): This is only needed when a bot token is used. A user token should handle this on its own.
-        if let Some(icon) = profile.icon {
-            if let Some(images) = icon.images {
-                // TODO(dkg): not sure if this is the right one to use...
-                let resolution48 = images.resolutions.into_iter().find(|(r, _)| *r == 48);
-                if let Some(resolution48) = resolution48 {
-                    post_chat_req.icon_url(resolution48.1);
+
+    let is_user_token = config.slack_token.starts_with("xoxp-");
+    if !is_user_token {
+        if let Some(profile) = slack_user.profile {
+            post_chat_req.username(profile.display_name.unwrap_or_else(|| username.into()));
+            // NOTE(dkg): This is only needed when a bot token is used. A user token should handle this on its own.
+            if let Some(icon) = profile.icon {
+                if let Some(images) = icon.images {
+                    // TODO(dkg): not sure if this is the right one to use...
+                    let resolution48 = images.resolutions.into_iter().find(|(r, _)| *r == 48);
+                    if let Some(resolution48) = resolution48 {
+                        post_chat_req.icon_url(resolution48.1);
+                    } else {
+                        warn!("Profile icon with size 48x48 not found.");
+                    }
                 } else {
-                    warn!("Profile icon with size 48x48 not found.");
+                    warn!("No image_original");
                 }
             } else {
-                eprintln!("No image_original");
+                warn!("No profile icon");
             }
         } else {
-            eprintln!("No profile icon");
+            panic!("The user '{}' has no user profile on Slack.", username);
         }
-    } else {
-        panic!("The user '{}' has no user profile on Slack.", username);
     }
 
     let post_chat_resp = session.chat_post_message(&post_chat_req).await?;
-    eprintln!("response: {:#?}", post_chat_resp);
+    debug!("Response: {:#?}", post_chat_resp);
+
     Ok(())
 }
