@@ -162,8 +162,10 @@ async fn main() -> color_eyre::Result<()> {
     }
 
     // TODO(dkg): consider starting up Chromedriver manually here in a separate thread
-
-    let driver = WebDriver::new("http://localhost:4444", &caps).await?;
+    let chromedriver_host = env::var("CHROMEDRIVER_HOST").unwrap_or("http://localhost".into());
+    let chromedriver_port =  env::var("CHROMEDRIVER_PORT").unwrap_or("4444".into()).parse::<i32>().unwrap_or(4444);
+    let chromedriver_url = format!("{}:{}", chromedriver_host, chromedriver_port);
+    let driver = WebDriver::new(&chromedriver_url, &caps).await?;
 
     let dev_tools = ChromeDevTools::new(driver.session());
     let version_info = dev_tools.execute_cdp("Browser.getVersion").await?;
