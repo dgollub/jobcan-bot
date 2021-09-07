@@ -1,7 +1,7 @@
 use log::{debug, warn};
 use slack_morphism::prelude::*;
 
-use crate::config::{Configuration, ENVVAR_SLACK_USER_NAME, SLACK_TOKEN};
+use crate::config::{Configuration, ENVVAR_SLACK_TOKEN, ENVVAR_SLACK_USER_NAME};
 
 pub async fn post_to_slack(
     config: &Configuration,
@@ -11,7 +11,7 @@ pub async fn post_to_slack(
     if !config.can_post_to_slack() {
         debug!(
             "'{}' and '{}' environment variable must be set in order to post to Slack -> ignoring",
-            SLACK_TOKEN, ENVVAR_SLACK_USER_NAME,
+            ENVVAR_SLACK_TOKEN, ENVVAR_SLACK_USER_NAME,
         );
         return Ok(());
     }

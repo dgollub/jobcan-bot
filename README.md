@@ -26,7 +26,7 @@ See [.env.example](.env.example) for the available configuration options.
 ### Slack integration
 
 You can also configure this bot to automatically post a message to a specific Slack channel after punshing into Jobcan.
-You will need to set the `SLACK_USER_TOKEN` environment variable (or set it in your `.env` file). Then you can specify the
+You will need to set the `SLACK_TOKEN` environment variable (or set it in your `.env` file). Then you can specify the
 channel and message via the `--slack-channel` (default: `#standup`) and `--slack-message` command line arguments.
 
 By default `--slack-message` will use the same message you specified for Jobcan.

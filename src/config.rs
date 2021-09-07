@@ -2,7 +2,7 @@ use std::env;
 
 pub const ENVVAR_NAME_LOGIN: &str = "JC_LOGIN";
 pub const ENVVAR_NAME_PASSWORD: &str = "JC_PASSWORD";
-pub const SLACK_TOKEN: &str = "SLACK_USER_TOKEN";
+pub const ENVVAR_SLACK_TOKEN: &str = "SLACK_TOKEN";
 pub const ENVVAR_SLACK_USER_NAME: &str = "SLACK_USER_NAME";
 
 #[derive(Default)]
@@ -26,7 +26,7 @@ impl Configuration {
     pub fn from_env() -> Self {
         let login = env::var(ENVVAR_NAME_LOGIN).unwrap_or_default();
         let password = env::var(ENVVAR_NAME_PASSWORD).unwrap_or_default();
-        let slack_token = env::var(SLACK_TOKEN).unwrap_or_default();
+        let slack_token = env::var(ENVVAR_SLACK_TOKEN).unwrap_or_default();
         let slack_user_name = env::var(ENVVAR_SLACK_USER_NAME).unwrap_or_default();
 
         Configuration {

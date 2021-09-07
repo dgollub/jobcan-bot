@@ -68,12 +68,12 @@ struct PushIt {
     #[clap(short, long, default_value = "work start")]
     message: String,
 
-    /// Message for Slack. Only used when SLACK_USER_TOKEN and slack_channel are set.
+    /// Message for Slack. Only used when SLACK_TOKEN and slack_channel are set.
     /// If not set no message is posted.
     #[clap(long, default_value = "", name = "slack-message")]
     slack_message: String,
 
-    /// The Slack channel to post to. Only used when SLACK_USER_TOKEN is set. Default: #standup
+    /// The Slack channel to post to. Only used when SLACK_TOKEN is set. Default: #standup
     #[clap(long, default_value = "#standup", name = "slack-channel")]
     slack_channel: String,
 }
