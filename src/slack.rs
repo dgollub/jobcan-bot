@@ -1,7 +1,7 @@
 use log::{debug, warn};
 use slack_morphism::prelude::*;
 
-use crate::config::{Configuration, ENVVAR_SLACK_USER_NAME, ENVVAR_SLACK_USER_TOKEN};
+use crate::config::{Configuration, ENVVAR_SLACK_USER_NAME, SLACK_TOKEN};
 
 pub async fn post_to_slack(
     config: &Configuration,
@@ -11,7 +11,7 @@ pub async fn post_to_slack(
     if !config.can_post_to_slack() {
         debug!(
             "'{}' and '{}' environment variable must be set in order to post to Slack -> ignoring",
-            ENVVAR_SLACK_USER_TOKEN, ENVVAR_SLACK_USER_NAME,
+            SLACK_TOKEN, ENVVAR_SLACK_USER_NAME,
         );
         return Ok(());
     }
@@ -35,7 +35,7 @@ pub async fn post_to_slack(
     let hyper_connector = SlackClientHyperConnector::new();
     let client = SlackClient::new(hyper_connector);
 
-    let token_value = config.slack_user_token.clone();
+    let token_value = config.slack_token.clone();
     let token_value: SlackApiTokenValue = token_value.into();
     let token: SlackApiToken = SlackApiToken::new(token_value);
 

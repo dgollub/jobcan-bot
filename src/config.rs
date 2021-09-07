@@ -2,14 +2,14 @@ use std::env;
 
 pub const ENVVAR_NAME_LOGIN: &str = "JC_LOGIN";
 pub const ENVVAR_NAME_PASSWORD: &str = "JC_PASSWORD";
-pub const ENVVAR_SLACK_USER_TOKEN: &str = "SLACK_USER_TOKEN";
+pub const SLACK_TOKEN: &str = "SLACK_USER_TOKEN";
 pub const ENVVAR_SLACK_USER_NAME: &str = "SLACK_USER_NAME";
 
 #[derive(Default)]
 pub struct Configuration {
     pub login: String,
     pub password: String,
-    pub slack_user_token: String,
+    pub slack_token: String,
     pub slack_user_name: String,
 }
 
@@ -26,13 +26,13 @@ impl Configuration {
     pub fn from_env() -> Self {
         let login = env::var(ENVVAR_NAME_LOGIN).unwrap_or_default();
         let password = env::var(ENVVAR_NAME_PASSWORD).unwrap_or_default();
-        let slack_user_token = env::var(ENVVAR_SLACK_USER_TOKEN).unwrap_or_default();
+        let slack_token = env::var(SLACK_TOKEN).unwrap_or_default();
         let slack_user_name = env::var(ENVVAR_SLACK_USER_NAME).unwrap_or_default();
 
         Configuration {
             login,
             password,
-            slack_user_token,
+            slack_token,
             slack_user_name,
         }
     }
@@ -42,6 +42,6 @@ impl Configuration {
     }
 
     pub fn can_post_to_slack(&self) -> bool {
-        !self.slack_user_token.is_empty() && !self.slack_user_name.is_empty()
+        !self.slack_token.is_empty() && !self.slack_user_name.is_empty()
     }
 }
