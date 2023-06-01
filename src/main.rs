@@ -1,7 +1,7 @@
 use chrono::prelude::*;
 use clap::Clap;
 use color_eyre::eyre::{bail, WrapErr};
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use std::{env, thread, time};
 use thirtyfour::prelude::*;
 use thirtyfour::{common::command::Command, extensions::chrome::ChromeDevTools};
@@ -13,6 +13,7 @@ mod slack;
 use crate::slack::post_to_slack;
 
 const INDEX_FOR_TABLE_WITH_PUNCHED_DATA: usize = 6;
+const INDEX_FOR_TABLE_WITH_WORKING_HOURS: usize = 3;
 const COLUMN_DATE: usize = 0;
 const COLUMN_HOLIDAY: usize = 1;
 const COLUMN_START_TIME: usize = 2;
@@ -294,15 +295,11 @@ async fn main() -> color_eyre::Result<()> {
                 )))
                 .await?;
 
-            thread::sleep(time::Duration::from_millis(500));
+            thread::sleep(time::Duration::from_millis(3000));
 
             debug!("Checking if we were redirected to the partial error page ...");
 
-            let right_url = driver.current_url().await?;
-            if right_url.contains("error/partial-rate-limit") {
-                driver.back().await?;
-                thread::sleep(time::Duration::from_millis(500));
-            }
+            wait_for_page_to_load(&driver).await?;
 
             if let Some(input_date_str) = &list.date {
                 let full_input_date = format!("{}01", input_date_str); // format is YYYYMM
@@ -315,6 +312,7 @@ async fn main() -> color_eyre::Result<()> {
                         &naive_date.month()
                     )))
                     .await?;
+                wait_for_page_to_load(&driver).await?;
             }
 
             if !list.csv {
@@ -453,6 +451,54 @@ async fn main() -> color_eyre::Result<()> {
                         info!("---------------------------");
                     }
                 }
+
+                if !list.csv {
+                    // NOTE(dkg): Get the working hours directly from jobcan
+
+                    // press button to display stats
+                    let toogle_button = driver
+                        .find_element(By::Css("[data-toggle=\"collapse\"]"))
+                        .await;
+                    if toogle_button.is_err() {
+                        bail!("Could not find toggle button");
+                    }
+                    toogle_button.unwrap().click().await?;
+                    thread::sleep(time::Duration::from_millis(500));
+
+                    let table = &tables[INDEX_FOR_TABLE_WITH_WORKING_HOURS];
+                    let body = table.find_element(By::Tag("tbody")).await?;
+                    const LABELS: &[&str] = &[
+                        "Worked Hours",
+                        "Required Hours",
+                        "Overtime",
+                        "Night Hours",
+                        "Day Hours",
+                    ];
+
+                    for (index, tr) in body.find_elements(By::Tag("tr")).await?.iter().enumerate() {
+                        // 1. row: Actual Working Hours
+                        // 2. row: scheduled monthly working hours
+                        // 3. row: Actual Overtime
+                        // 4. row: Actual Night Shift
+                        // 5. row: Weekday Working Hours
+                        if index > 4 {
+                            break;
+                        }
+                        let columns = tr.find_elements(By::Tag("td")).await?;
+                        if columns.len() == 1 {
+                            let column_value = &columns[0];
+                            let value = column_value.text().await?;
+                            info!("{}: {}", LABELS[index], value);
+                        } else {
+                            warn!(
+                                "Number of columns for row {} is wrong: {}, expected 1.",
+                                index,
+                                columns.len()
+                            );
+                        }
+                    }
+                    info!("---------------------------");
+                }
             }
         }
     }
@@ -462,6 +508,30 @@ async fn main() -> color_eyre::Result<()> {
             trace!("Sleeping for {} seconds...", sleep_time);
             thread::sleep(time::Duration::from_secs(sleep_time));
         }
+    }
+
+    Ok(())
+}
+
+async fn wait_for_page_to_load(driver: &WebDriver) -> color_eyre::Result<()> {
+    let mut i = 1;
+    let success = loop {
+        if i == 10 {
+            break false;
+        }
+        let right_url = driver.current_url().await?;
+        if right_url.contains("error/partial-rate-limit") {
+            warn!("We are being rate limited. Try {} of 10.", i);
+            driver.back().await?;
+            thread::sleep(time::Duration::from_millis(5000));
+        } else {
+            break true;
+        }
+        i += 1;
+    };
+
+    if !success {
+        bail!("Rate limit could not be circumvented. Aborting.");
     }
 
     Ok(())
