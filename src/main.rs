@@ -12,8 +12,9 @@ use crate::config::{Configuration, ENVVAR_NAME_LOGIN, ENVVAR_NAME_PASSWORD};
 mod slack;
 use crate::slack::post_to_slack;
 
-const INDEX_FOR_TABLE_WITH_PUNCHED_DATA: usize = 6;
 const INDEX_FOR_TABLE_WITH_WORKING_HOURS: usize = 3;
+const INDEX_FOR_TABLE_WITH_VACATION_DATA: usize = 4;
+const INDEX_FOR_TABLE_WITH_PUNCHED_DATA: usize = 6;
 const COLUMN_DATE: usize = 0;
 const COLUMN_HOLIDAY: usize = 1;
 const COLUMN_START_TIME: usize = 2;
@@ -467,7 +468,7 @@ async fn main() -> color_eyre::Result<()> {
 
                     let table = &tables[INDEX_FOR_TABLE_WITH_WORKING_HOURS];
                     let body = table.find_element(By::Tag("tbody")).await?;
-                    const LABELS: &[&str] = &[
+                    const LABELS_WORKING_HOURS: &[&str] = &[
                         "Worked Hours",
                         "Required Hours",
                         "Overtime",
@@ -488,7 +489,35 @@ async fn main() -> color_eyre::Result<()> {
                         if columns.len() == 1 {
                             let column_value = &columns[0];
                             let value = column_value.text().await?;
-                            info!("{}: {}", LABELS[index], value);
+                            info!("{}: {}", LABELS_WORKING_HOURS[index], value);
+                        } else {
+                            warn!(
+                                "Number of columns for row {} is wrong: {}, expected 1.",
+                                index,
+                                columns.len()
+                            );
+                        }
+                    }
+                    info!("---------------------------");
+
+                    let table = &tables[INDEX_FOR_TABLE_WITH_VACATION_DATA];
+                    let body = table.find_element(By::Tag("tbody")).await?;
+                    const LABELS_VACATION: &[&str] = &[
+                        "Paid Vacations",
+                        "Compensatory Days Off",
+                        "Substitution Days",
+                        "Special Vacations",
+                    ];
+
+                    for (index, tr) in body.find_elements(By::Tag("tr")).await?.iter().enumerate() {
+                        if index > 3 {
+                            break;
+                        }
+                        let columns = tr.find_elements(By::Tag("td")).await?;
+                        if columns.len() == 1 {
+                            let column_value = &columns[0];
+                            let value = column_value.text().await?;
+                            info!("{}: {}", LABELS_VACATION[index], value);
                         } else {
                             warn!(
                                 "Number of columns for row {} is wrong: {}, expected 1.",
