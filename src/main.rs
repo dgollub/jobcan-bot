@@ -375,6 +375,10 @@ async fn main() -> color_eyre::Result<()> {
                                 let total_for_day_without_breaks = total_for_day - break_minutes;
                                 let hours = total_for_day_without_breaks / 60;
                                 let minutes = total_for_day_without_breaks % 60;
+
+                                // "06/01(木)" => remove everything after (including) "("
+                                let date = date[..5].to_owned();
+
                                 println!(
                                     "{};{};{};{};{:02}:{:02}",
                                     date, start_time, end_time, break_time, hours, minutes
